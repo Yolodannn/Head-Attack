@@ -1,0 +1,29 @@
+# syntax = docker/dockerfile:1-experimental
+FROM golang:1.24-alpine AS build
+
+RUN apk add --no-cache bash git openssh make build-base linux-headers
+
+RUN go env -w CGO_ENABLED="1"
+
+WORKDIR /build
+
+ADD prysm_new /build/prysm
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    cd /build/prysm && go mod download
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    cd /build/prysm && go build -o /beacon-chain ./cmd/beacon-chain
+
+FROM alpine
+
+RUN apk add --no-cache ca-certificates libstdc++
+
+WORKDIR /root
+
+COPY --from=build /beacon-chain /usr/bin/beacon-chain
+COPY ./entrypoint/beacon-node.sh /usr/local/bin/beacon-node.sh
+RUN chmod u+x /usr/local/bin/beacon-node.sh
+
+ENTRYPOINT [ "/usr/local/bin/beacon-node.sh" ]
